@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LASA Medicine Prevention System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="navbar">
+        <h2><i class="fas fa-hospital"></i> LASA Medicine Prevention System</h2>
+    </div>
+
+    <div class="main-container">
+        <div class="content-box">
+            <h1><i class="fas fa-shield-alt"></i> LASA Medicine Safety Check</h1>
+            <p style="color: #2c3e50; margin-bottom: 2rem;">Prevent Look-Alike Sound-Alike medication errors with voice-assisted verification</p>
+            
+          
+            <div class="voice-container">
+                <div class="mic-section">
+                    <button id="micButton" class="mic-button">
+                        <i class="fas fa-microphone"></i>
+                    </button>
+                    <p class="mic-text"><strong>Speak Medication Name</strong><br><span>For LASA safety verification</span></p>
+                </div>
+                
+                <p class="status-text" id="status"><i class="fas fa-info-circle"></i> Click the microphone and speak a medicine name</p>
+                
+                <div class="transcript" id="transcript"></div>
+
+             
+                <div class="similarity-preview" id="similarityPreview" style="display: none;">
+                    <h3><i class="fas fa-percentage"></i> LASA Check Results</h3>
+                    <div id="similarityItems"></div>
+                </div>
+
+              
+                <div class="safety-features">
+                    <div class="safety-feature">
+                        <i class="fas fa-microphone"></i>
+                        <p>Phonetic<br>Analysis</p>
+                    </div>
+                    <div class="safety-feature">
+                        <i class="fas fa-microphone-alt"></i>
+                        <p>Voice<br>Recognition</p>
+                    </div>
+                    <div class="safety-feature">
+                        <i class="fas fa-shield-alt"></i>
+                        <p>Safety<br>Verification</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let recognition;
+        const micButton = document.getElementById('micButton');
+        const status = document.getElementById('status');
+        const transcript = document.getElementById('transcript');
+        const similarityPreview = document.getElementById('similarityPreview');
+        const similarityItems = document.getElementById('similarityItems');
+        
+      
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            recognition.onstart = () => {
+                status.innerHTML = '<i class="fas fa-microphone"></i> Listening...';
+                micButton.classList.add('recording');
+                similarityPreview.style.display = 'none';
+                transcript.textContent = '';
+            };
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                transcript.textContent = text;
+                verifyLASA(text);
+            };
+
+            recognition.onerror = (event) => {
+                status.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error occurred. Please try again.';
+                micButton.classList.remove('recording');
+            };
+
+            recognition.onend = () => {
+                status.innerHTML = '<i class="fas fa-info-circle"></i> Click the microphone to speak again';
+                micButton.classList.remove('recording');
+            };
+        } else {
+            status.innerHTML = '<i class="fas fa-exclamation-circle"></i> Speech recognition not supported';
+            micButton.disabled = true;
+        }
+
+        micButton.addEventListener('click', () => {
+            if (recognition) {
+                recognition.start();
+            }
+        });
+
+        function verifyLASA(text) {
+            status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking LASA medications...';
+            
+            fetch('/check_lasa', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: text })
+            })
+            .then(response => response.json())
+            .then(data => {
+                similarityItems.innerHTML = '';
+                similarityPreview.style.display = 'block';
+                
+                if (data.error) {
+                    similarityItems.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-circle"></i> ${data.error}</div>`;
+                    return;
+                }
+                
+                if (!data.similar_medicines || data.similar_medicines.length === 0) {
+                    similarityItems.innerHTML = `
+                        <div class="safe-message">
+                            <i class="fas fa-check-circle"></i>
+                            No LASA medications found with significant similarity.
+                        </div>
+                    `;
+                    return;
+                }
+                
+              
+                data.similar_medicines.forEach(result => {
+                    const medicineCard = document.createElement('div');
+                    medicineCard.className = 'medicine-card';
+                    
+                    medicineCard.innerHTML = `
+                        <div class="detected-medicine">
+                            <h4><i class="fas fa-pills"></i> Detected: ${result.input_word}</h4>
+                            <p class="match-info">Matches with: <strong>${result.matched_medicine}</strong> (${result.similarity}% similar)</p>
+                        </div>
+                        ${result.similar_medicines.length > 0 ? `
+                            <div class="similar-medicines">
+                                <p class="warning"><i class="fas fa-exclamation-triangle"></i> Warning: Similar LASA Medications</p>
+                                <ul>
+                                    ${result.similar_medicines.map(med => `
+                                        <li>
+                                            <span class="med-name">${med.name}</span>
+                                            <div class="similarity-info">
+                                                <span class="similarity-badge">${med.similarity}% similar</span>
+                                                <span class="levenshtein-badge" title="Levenshtein Distance">LD: ${med.levenshtein_distance}</span>
+                                            </div>
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    `;
+                    
+                    similarityItems.appendChild(medicineCard);
+                });
+                
+                status.innerHTML = '<i class="fas fa-info-circle"></i> Click the microphone to check another medicine';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                status.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error checking LASA similarity';
+                similarityItems.innerHTML = '<div class="error-message">Error checking LASA medications. Please try again.</div>';
+            });
+        }
+    </script>
+</body>
+</html>

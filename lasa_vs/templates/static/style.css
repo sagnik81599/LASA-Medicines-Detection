@@ -1,0 +1,211 @@
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f5f7fa;
+}
+.navbar {
+    background-color: #005bab;
+    color: white;
+    padding: 1rem 2rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.navbar h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.main-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+}
+.content-box {
+    background-color: white;
+    padding: 3rem 2rem;
+    border-radius: 8px;
+    border: 1px solid #e1e5eb;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    text-align: center;
+    width: 70%;
+    margin: 0 auto;
+    min-height: 400px;
+}
+.safety-features {
+    display: flex;
+    justify-content: center;
+    gap: 2rem;
+    margin: 2rem 0;
+    padding: 1rem;
+    background-color: #f8fafd;
+    border-radius: 8px;
+    border: 1px solid #e1e5eb;
+}
+.safety-feature {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem;
+}
+.voice-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2rem;
+    margin: 2rem auto;
+    max-width: 600px;
+}
+.mic-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+.mic-button {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background-color: #005bab;
+    color: white;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+.mic-text {
+    text-align: center;
+    margin: 0;
+}
+.mic-text span {
+    font-size: 0.9rem;
+    color: #666;
+}
+.mic-button i {
+    font-size: 3rem;
+}
+.mic-button:hover {
+    background-color: #004c8c;
+    transform: scale(1.05);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+}
+.safety-feature i {
+    font-size: 1.5rem;
+    color: #005bab;
+}
+.safety-feature p {
+    margin: 0;
+    color: #2c3e50;
+    font-size: 0.9rem;
+}
+h1 {
+    color: #2c3e50;
+    margin-bottom: 30px;
+}
+.audio-container {
+    margin: 20px 0;
+}
+#checkButton {
+    background-color: #005bab;
+    font-size: 1rem;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 1rem auto;
+}
+#checkButton:hover {
+    background-color: #004c8c;
+}
+#playButton {
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    margin: 10px;
+    transition: background-color 0.3s;
+}
+#playButton:hover {
+    background-color: #2980b9;
+}
+.result-container {
+    margin-top: 20px;
+    padding: 10px;
+    border-radius: 5px;
+}
+.success {
+    background-color: #2ecc71;
+    color: white;
+}
+.error {
+    background-color: #e74c3c;
+    color: white;
+}
+.similarity-preview {
+    margin: 1rem 0;
+    padding: 1rem;
+    background-color: #fff8e1;
+    border-radius: 8px;
+    border: 1px solid #ffeeba;
+    display: none;
+}
+.similarity-preview.show {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+.similarity-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin: 0.5rem 0;
+    padding: 0.5rem;
+    background: white;
+    border-radius: 4px;
+}
+.similarity-bar {
+    background-color: #eee;
+    height: 8px;
+    width: 150px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 0 1rem;
+}
+.similarity-fill {
+    height: 100%;
+    transition: width 0.3s ease;
+}
+.warning-high .similarity-fill {
+    background-color: #e74c3c;
+}
+.warning-medium .similarity-fill {
+    background-color: #f39c12;
+}
+.warning-low .similarity-fill {
+    background-color: #27ae60;
+}
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
