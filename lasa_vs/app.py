@@ -1,4 +1,6 @@
 import os
+import string
+import json
 import speech_recognition as sr
 from pydub import AudioSegment
 import nltk
@@ -6,66 +8,67 @@ from nltk.corpus import cmudict
 from difflib import SequenceMatcher
 from Levenshtein import distance as levenshtein_distance
 from flask import Flask, request, jsonify, render_template
+import cloudinary
+import cloudinary.uploader
+import pytesseract
+from PIL import Image
+from dotenv import load_dotenv
+import shutil
+import google.generativeai as genai
 
 
 app = Flask(__name__)
 
+# Load environment variables
+load_dotenv()
+
+# Configure Gemini API
+genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+
+# Configure tesseract path
+tesseract_path = shutil.which('tesseract')
+if tesseract_path:
+    pytesseract.pytesseract.tesseract_cmd = tesseract_path
+else:
+    # Fallback to common locations
+    common_paths = [
+        r'C:\Program Files\Tesseract-OCR\tesseract.exe',
+        r'C:\Program Files (x86)\Tesseract-OCR\tesseract.exe',
+        r'C:\ProgramData\chocolatey\bin\tesseract.exe',
+        r'C:\Users\ASUS\AppData\Local\Programs\Tesseract-OCR\tesseract.exe',
+        r'C:\Windows\System32\tesseract.exe'
+    ]
+    for path in common_paths:
+        if os.path.exists(path):
+            pytesseract.pytesseract.tesseract_cmd = path
+            break
+
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv('CLOUD_NAME'),
+    api_key=os.getenv('API_KEY'),
+    api_secret=os.getenv('API_SECRET'),
+    secure=True
+)
+
 nltk.download('cmudict', quiet=True)
 cmu_dict = cmudict.dict()
 
+with open('medicines.json', 'r') as f:
+    LASA_MEDICINES = json.load(f)
 
-LASA_MEDICINES = {
-    "zantac": ["Z532", "zantac 150mg", "zantac tablet 150mg"],
-    "soma": ["S530", "soma tablet 350mg"],
-    "criminal": ["C654", "criminal tablet 12mg"],
-    "hydroxyzine": ["H362", "hydroxyzine"],
-    "hydralazine": ["H364", "hydralazine"],
-    "celexa": ["C420", "celexa"],
-    "celebrex": ["C416", "celebrex"],
-    "clonidine": ["C435", "clonidine"],
-    "clonazepam": ["C435", "clonazepam"],
-    "zyrtec": ["Z632", "zyrtec"],
-    "lamictal": ["L523", "lamictal"],
-    "lamisil": ["L524", "lamisil"],
-    "trazodone": ["T621", "trazodone"],
-    "tramadol": ["T622", "tramadol"],
-    "metformin": ["M431", "metformin", "glycomet", "glycomet gp"],
-    "metronidazole": ["M432", "metronidazole"],
-    "norvasc": ["N510", "norvasc"],
-    "navane": ["N511", "navane"],
-    "zyprexa": ["Z634", "zyprexa"],
-    "zyvox": ["Z635", "zyvox"],
-    "ritalin": ["R456", "ritalin"],
-    "ribavirin": ["R457", "ribavirin"],
-    "prednisone": ["P342", "prednisone"],
-    "prednisolone": ["P343", "prednisolone"],
-    "dopamine": ["D212", "dopamine"],
-    "dobutamine": ["D213", "dobutamine"],
-    
-
-  
-    "telmisartan": ["T431", "telmisartan"],
-    "pan-d": ["P561", "pantoprazole domperidone", "pan d", "pan-d"],
-    "pantoprazole": ["P562", "pantoprazole"],
-    "amlodipine": ["A333", "amlodipine"],
-    "atenolol": ["A334", "atenolol"],
-    "atorvastatin": ["A336", "atorvastatin"],
-    "augmentin": ["A339", "augmentin", "amoxicillin clavulanic"],
-    "ryzodeg": ["R888", "ryzodeg", "insulin degludec", "insulin aspart"],
-    "udiliv": ["U777", "ursodeoxycholic acid", "udiliv"],
-    "becosules": ["B666", "becosules", "multivitamin"],
-    "ibuprofen": ["I232", "ibuprofen"],
-    "diclofenac": ["D233", "diclofenac"],
-    "levocetirizine": ["L234", "levocetirizine"],
-    "montelukast": ["M235", "montelukast"]
-}
+def clean_word(word):
+    """Remove punctuation and extra whitespace from word"""
+    word = word.lower().strip()
+    word = word.translate(str.maketrans('', '', string.punctuation))
+    return word.strip()
 
 def get_phonemes(word):
     """Retrieve phonemes for a given word from CMU dictionary"""
-    word = word.lower().strip()
+    word = clean_word(word)
     
     for suffix in [' tablet', ' mg', ' capsule']:
-        word = word.replace(suffix, '')
+        word = word.replace(suffix, '').strip()
     
     if word in cmu_dict:
         return cmu_dict[word][0]
@@ -107,6 +110,21 @@ def calculate_levenshtein_similarity(word1, word2):
     distance = levenshtein_distance(word1.lower(), word2.lower())
     return (1 - distance / max_length) * 100
 
+def calculate_phonetic_similarity(phonemes1, phonemes2):
+    """Calculate similarity between two phoneme sequences"""
+    if not phonemes1 or not phonemes2:
+        return 0
+    
+    phoneme_str1 = ''.join(phonemes1).lower()
+    phoneme_str2 = ''.join(phonemes2).lower()
+    
+    max_len = max(len(phoneme_str1), len(phoneme_str2))
+    if max_len == 0:
+        return 100
+    
+    distance = levenshtein_distance(phoneme_str1, phoneme_str2)
+    return max(0, (1 - distance / max_len) * 100)
+
 def similarity_score(word1, word2):
    
     string_similarity = SequenceMatcher(None, word1.lower(), word2.lower()).ratio() * 100
@@ -117,64 +135,100 @@ def similarity_score(word1, word2):
     phonemes2 = get_phonemes(word2)
     
     if phonemes1 and phonemes2:
+        phonetic_similarity = calculate_phonetic_similarity(phonemes1, phonemes2)
         code1 = soundex(phonemes1)
         code2 = soundex(phonemes2)
-        phonetic_similarity = SequenceMatcher(None, code1, code2).ratio() * 100
+        soundex_similarity = SequenceMatcher(None, code1, code2).ratio() * 100
         
-        return (string_similarity * 0.3 + levenshtein_similarity * 0.3 + phonetic_similarity * 0.4)
+        combined_phonetic = (phonetic_similarity * 0.6 + soundex_similarity * 0.4)
+        return (string_similarity * 0.15 + levenshtein_similarity * 0.15 + combined_phonetic * 0.7)
     
 
-    return (string_similarity * 0.5 + levenshtein_similarity * 0.5)
+    return (string_similarity * 0.4 + levenshtein_similarity * 0.6)
 
 def check_LASA(input_text):
     """Check if input text contains any LASA medications"""
     input_words = input_text.lower().split()
-    results = []
-    
+    results_dict = {}
     
     for word in input_words:
-        word = word.strip()
+        word = clean_word(word)
+        if not word:
+            continue
         
         base_word = word
         for suffix in [' tablet', ' mg', ' capsule']:
             base_word = base_word.replace(suffix, '')
         
-        
-        for med_base, variations in LASA_MEDICINES.items():
-            
+        for med_base, med_data in LASA_MEDICINES.items():
             base_similarity = similarity_score(base_word, med_base)
             
-        
-            for variation in variations:
+            for variation in med_data['aliases']:
                 var_similarity = similarity_score(word, variation)
                 similarity = max(base_similarity, var_similarity)
                 
-                if similarity >= 50:  
-                    
-                    similar_meds = []
-                    for other_med, other_variations in LASA_MEDICINES.items():
-                        if other_med != med_base:
-                            other_similarity = similarity_score(med_base, other_med)
-                            if other_similarity >= 50:
-                        
-                                lev_distance = levenshtein_distance(med_base, other_med)
-                                similar_meds.append({
-                                    "name": other_med,
-                                    "similarity": round(other_similarity, 1),
-                                    "levenshtein_distance": lev_distance
-                                })
-                    
-                    similar_meds.sort(key=lambda x: x['similarity'], reverse=True)
-                    
-                    results.append({
-                        "input_word": word,
-                        "matched_medicine": med_base,
-                        "similarity": round(similarity, 1),
-                        "similar_medicines": similar_meds
+                if similarity >= 50:
+                    if med_base not in results_dict or similarity > results_dict[med_base]['similarity']:
+                        results_dict[med_base] = {
+                            "input_word": word,
+                            "matched_medicine": med_base,
+                            "code": med_data['code'],
+                            "purpose": med_data['purpose'],
+                            "similarity": round(similarity, 1),
+                            "similar_medicines": []
+                        }
+                    break
+    
+    results = list(results_dict.values())
+    
+    for result in results:
+        similar_meds = []
+        med_base = result['matched_medicine']
+        for other_med, other_med_data in LASA_MEDICINES.items():
+            if other_med != med_base:
+                other_similarity = similarity_score(med_base, other_med)
+                if other_similarity >= 50:
+                    lev_distance = levenshtein_distance(med_base, other_med)
+                    similar_meds.append({
+                        "name": other_med,
+                        "code": other_med_data['code'],
+                        "purpose": other_med_data['purpose'],
+                        "similarity": round(other_similarity, 1),
+                        "levenshtein_distance": lev_distance
                     })
-                    break  
+        
+        similar_meds.sort(key=lambda x: x['similarity'], reverse=True)
+        result['similar_medicines'] = similar_meds
     
     return results
+
+def extract_text_from_image(image_path):
+    """Extract text from prescription image using OCR"""
+    try:
+        # Open the image
+        image = Image.open(image_path)
+
+        # Convert to RGB if necessary
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+
+        # Extract text using pytesseract
+        text = pytesseract.image_to_string(image)
+
+        return text.strip()
+    except Exception as e:
+        return f"Error extracting text: {str(e)}"
+
+def extract_medications_with_gemini(text):
+    """Extract medication names from text using Gemini AI"""
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = f"Extract only the medication names from the following prescription text. List them separated by commas, nothing else. If no medications found, return empty string:\n\n{text}"
+        response = model.generate_content(prompt)
+        medications = response.text.strip()
+        return medications
+    except Exception as e:
+        return f"Error extracting medications: {str(e)}"
 
 @app.route('/')
 def index():
@@ -234,6 +288,62 @@ def upload_audio():
             pass  
             
         return jsonify(results)
+
+@app.route('/upload_image', methods=['POST'])
+def upload_image():
+    """Handle prescription image upload and extract medicine names"""
+    if 'image' not in request.files:
+        return jsonify({"error": "No image file provided"}), 400
+
+    file = request.files['image']
+    if file.filename == '':
+        return jsonify({"error": "No selected file"}), 400
+
+    if file:
+        try:
+            # Upload to Cloudinary
+            upload_result = cloudinary.uploader.upload(file, folder="prescriptions")
+
+            # Get the secure URL
+            image_url = upload_result['secure_url']
+
+            # For OCR processing, we need to download the image temporarily
+            # Since Cloudinary provides the URL, we can use it directly with pytesseract
+            # But for simplicity, let's save the file temporarily and process it
+            temp_path = os.path.join('uploads', 'temp_' + file.filename)
+            file.seek(0)  # Reset file pointer
+            file.save(temp_path)
+
+            # Extract text from image
+            extracted_text = extract_text_from_image(temp_path)
+
+            # Clean up temp file
+            try:
+                os.remove(temp_path)
+            except:
+                pass
+
+            if extracted_text.startswith("Error"):
+                return jsonify({"error": extracted_text}), 500
+
+            # Extract medication names using Gemini
+            filtered_medications = extract_medications_with_gemini(extracted_text)
+
+            if filtered_medications.startswith("Error"):
+                return jsonify({"error": filtered_medications}), 500
+
+            # Check for LASA medications in filtered medications
+            results = check_LASA(filtered_medications)
+
+            return jsonify({
+                "message": "Image processed successfully",
+                "filtered_medications": filtered_medications,
+                "image_url": image_url,
+                "similar_medicines": results
+            })
+
+        except Exception as e:
+            return jsonify({"error": f"Error processing image: {str(e)}"}), 500
 
 def process_audio(file_path):
     """Process audio file and detect LASA errors"""
