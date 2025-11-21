@@ -15,18 +15,35 @@
     <div class="main-container">
         <div class="content-box">
             <h1><i class="fas fa-shield-alt"></i> LASA Medicine Safety Check</h1>
-            <p style="color: #2c3e50; margin-bottom: 2rem;">Prevent Look-Alike Sound-Alike medication errors with voice-assisted verification</p>
+            <p style="color: #2c3e50; margin-bottom: 2rem;">Prevent Look-Alike Sound-Alike medication errors with voice or text input</p>
             
-          
+
             <div class="voice-container">
-                <div class="mic-section">
-                    <button id="micButton" class="mic-button">
-                        <i class="fas fa-microphone"></i>
-                    </button>
-                    <p class="mic-text"><strong>Speak Medication Name</strong><br><span>For LASA safety verification</span></p>
+                <div class="input-options">
+                    <div class="mic-section">
+                        <button id="micButton" class="mic-button">
+                            <i class="fas fa-microphone"></i>
+                        </button>
+                        <p class="mic-text"><strong>Speak Medication Name</strong><br><span>For LASA safety verification</span></p>
+                    </div>
+
+                    <div class="text-input-section">
+                        <input type="text" id="medicineInput" class="medicine-textbox" placeholder="Enter medication name...">
+                        <button id="checkButton" class="check-button">
+                            <i class="fas fa-check"></i> Check
+                        </button>
+                    </div>
+
+                    <!-- <div class="image-upload-section">
+                        <input type="file" id="imageInput" accept="image/*" style="display: none;">
+                        <button id="imageButton" class="image-button">
+                            <i class="fas fa-camera"></i>
+                        </button>
+                        <p class="image-text"><strong>Upload Prescription Image</strong><br><span>Extract medicine names from image</span></p>
+                    </div> -->
                 </div>
                 
-                <p class="status-text" id="status"><i class="fas fa-info-circle"></i> Click the microphone and speak a medicine name</p>
+                <p class="status-text" id="status"><i class="fas fa-info-circle"></i> Click the microphone to speak, enter text and click Check, or upload a prescription image</p>
                 
                 <div class="transcript" id="transcript"></div>
 
@@ -58,6 +75,10 @@
     <script>
         let recognition;
         const micButton = document.getElementById('micButton');
+        const checkButton = document.getElementById('checkButton');
+        const imageButton = document.getElementById('imageButton');
+        const imageInput = document.getElementById('imageInput');
+        const medicineInput = document.getElementById('medicineInput');
         const status = document.getElementById('status');
         const transcript = document.getElementById('transcript');
         const similarityPreview = document.getElementById('similarityPreview');
@@ -103,6 +124,33 @@
             }
         });
 
+        checkButton.addEventListener('click', () => {
+            const text = medicineInput.value.trim();
+            if (text) {
+                transcript.textContent = text;
+                verifyLASA(text);
+            } else {
+                status.innerHTML = '<i class="fas fa-exclamation-circle"></i> Please enter a medication name';
+            }
+        });
+
+        medicineInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                checkButton.click();
+            }
+        });
+
+        imageButton.addEventListener('click', () => {
+            imageInput.click();
+        });
+
+        imageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                processImage(file);
+            }
+        });
+
         function verifyLASA(text) {
             status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking LASA medications...';
             
@@ -142,14 +190,20 @@
                         <div class="detected-medicine">
                             <h4><i class="fas fa-pills"></i> Detected: ${result.input_word}</h4>
                             <p class="match-info">Matches with: <strong>${result.matched_medicine}</strong> (${result.similarity}% similar)</p>
+                            <p class="medicine-code"><strong>Code:</strong> ${result.code}</p>
+                            <p class="medicine-purpose"><strong>Purpose:</strong> ${result.purpose}</p>
                         </div>
                         ${result.similar_medicines.length > 0 ? `
                             <div class="similar-medicines">
                                 <p class="warning"><i class="fas fa-exclamation-triangle"></i> Warning: Similar LASA Medications</p>
                                 <ul>
                                     ${result.similar_medicines.map(med => `
-                                        <li>
-                                            <span class="med-name">${med.name}</span>
+                                        <li class="similar-med-item">
+                                            <div class="med-details">
+                                                <span class="med-name">${med.name}</span>
+                                                <p class="med-code"><strong>Code:</strong> ${med.code}</p>
+                                                <p class="med-purpose"><strong>Purpose:</strong> ${med.purpose}</p>
+                                            </div>
                                             <div class="similarity-info">
                                                 <span class="similarity-badge">${med.similarity}% similar</span>
                                                 <span class="levenshtein-badge" title="Levenshtein Distance">LD: ${med.levenshtein_distance}</span>
@@ -170,6 +224,88 @@
                 console.error('Error:', error);
                 status.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error checking LASA similarity';
                 similarityItems.innerHTML = '<div class="error-message">Error checking LASA medications. Please try again.</div>';
+            });
+        }
+
+        function processImage(file) {
+            status.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing prescription image...';
+            similarityPreview.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            fetch('/upload_image', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                similarityItems.innerHTML = '';
+                similarityPreview.style.display = 'block';
+
+                if (data.error) {
+                    similarityItems.innerHTML = `<div class="error-message"><i class="fas fa-exclamation-circle"></i> ${data.error}</div>`;
+                    status.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error processing image';
+                    return;
+                }
+
+                // Display extracted text
+                transcript.innerHTML = `<strong>Extracted Text:</strong><br>${data.extracted_text}`;
+
+                if (!data.similar_medicines || data.similar_medicines.length === 0) {
+                    similarityItems.innerHTML = `
+                        <div class="safe-message">
+                            <i class="fas fa-check-circle"></i>
+                            No LASA medications found in the prescription image.
+                        </div>
+                    `;
+                    status.innerHTML = '<i class="fas fa-info-circle"></i> Upload another prescription image';
+                    return;
+                }
+
+                // Display results similar to text/voice input
+                data.similar_medicines.forEach(result => {
+                    const medicineCard = document.createElement('div');
+                    medicineCard.className = 'medicine-card';
+
+                    medicineCard.innerHTML = `
+                        <div class="detected-medicine">
+                            <h4><i class="fas fa-pills"></i> Detected: ${result.input_word}</h4>
+                            <p class="match-info">Matches with: <strong>${result.matched_medicine}</strong> (${result.similarity}% similar)</p>
+                            <p class="medicine-code"><strong>Code:</strong> ${result.code}</p>
+                            <p class="medicine-purpose"><strong>Purpose:</strong> ${result.purpose}</p>
+                        </div>
+                        ${result.similar_medicines.length > 0 ? `
+                            <div class="similar-medicines">
+                                <p class="warning"><i class="fas fa-exclamation-triangle"></i> Warning: Similar LASA Medications</p>
+                                <ul>
+                                    ${result.similar_medicines.map(med => `
+                                        <li class="similar-med-item">
+                                            <div class="med-details">
+                                                <span class="med-name">${med.name}</span>
+                                                <p class="med-code"><strong>Code:</strong> ${med.code}</p>
+                                                <p class="med-purpose"><strong>Purpose:</strong> ${med.purpose}</p>
+                                            </div>
+                                            <div class="similarity-info">
+                                                <span class="similarity-badge">${med.similarity}% similar</span>
+                                                <span class="levenshtein-badge" title="Levenshtein Distance">LD: ${med.levenshtein_distance}</span>
+                                            </div>
+                                        </li>
+                                    `).join('')}
+                                </ul>
+                            </div>
+                        ` : ''}
+                    `;
+
+                    similarityItems.appendChild(medicineCard);
+                });
+
+                status.innerHTML = '<i class="fas fa-info-circle"></i> Upload another prescription image';
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                status.innerHTML = '<i class="fas fa-exclamation-circle"></i> Error processing image';
+                similarityItems.innerHTML = '<div class="error-message">Error processing prescription image. Please try again.</div>';
             });
         }
     </script>
